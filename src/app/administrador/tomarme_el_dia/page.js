@@ -1,11 +1,11 @@
 import React from "react";
-import Dashboard from "../components/Dashboard";
+import Tomardia from "@/app/components/Tomardia";
 import LayoutComponent from "@/app/components/LayoutComponent";
 
 function page() {
   return (
     <LayoutComponent>
-      <Dashboard />{" "}
+      <Tomardia />
     </LayoutComponent>
   );
 }

@@ -1,11 +1,10 @@
 import React from "react";
-import Dashboard from "../components/Dashboard";
 import LayoutComponent from "@/app/components/LayoutComponent";
-
+import Notificaciones from "../components/Notificaciones";
 function page() {
   return (
     <LayoutComponent>
-      <Dashboard />{" "}
+      <Notificaciones />
     </LayoutComponent>
   );
 }

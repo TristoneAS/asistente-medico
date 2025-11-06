@@ -1,123 +1,270 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Box, Paper, Typography, TextField } from "@mui/material";
+import { LocalizationProvider, DatePicker } from "@mui/x-date-pickers";
+import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
+import esLocale from "date-fns/locale/es";
+import { useRouter } from "next/navigation";
 
 export default function ChatBot() {
+  const router = useRouter();
+
+  const id = localStorage.getItem("id");
+  const nombre = localStorage.getItem("nombre");
+  const apellido = localStorage.getItem("apellido");
+  const telefono = localStorage.getItem("telefono");
+  const fecha_nacimiento = localStorage.getItem("fecha_nacimiento");
+  const direccion = localStorage.getItem("direccion");
+
   const [messages, setMessages] = useState([
     {
       sender: "bot",
-      text: "👋 ¡Hola! Soy tu asistente virtual. Puedes escribirme lo que quieras sobre tus citas.",
+      text: `👋 ¡Hola ${nombre}! Soy tu asistente virtual. Escribe 'agendar' para reservar tu cita o 'consultar' para ver tus citas ya agendadas.`,
     },
   ]);
-
   const [input, setInput] = useState("");
+  const [context, setContext] = useState({
+    step: "inicio",
+    fecha: null,
+    hora: null,
+  });
+  const [horasDisponibles, setHorasDisponibles] = useState([]);
+  const [fechaSeleccionada, setFechaSeleccionada] = useState(null);
+  const [fechasDisponibles, setFechasDisponibles] = useState([]);
+  const [motivoCita, setMotivoCita] = useState("");
 
-  const handleUserMessage = () => {
+  useEffect(() => {
+    const obtenerFechasDisponibles = async () => {
+      try {
+        const res = await fetch("/api/dias-disponibles");
+        const data = await res.json();
+        setFechasDisponibles(data);
+      } catch (error) {
+        console.error("Error al cargar fechas disponibles:", error);
+      }
+    };
+    obtenerFechasDisponibles();
+  }, []);
+
+  const handleUserMessage = async () => {
     if (!input.trim()) return;
-
     const userMessage = { sender: "user", text: input };
-    const newMessages = [...messages, userMessage];
-
-    // Detectar palabras clave
-    const text = input.toLowerCase();
     let botReply = { sender: "bot", text: "" };
+    const text = input.trim().toLowerCase();
 
-    // Intenciones principales
-    if (text.includes("agendar")) {
-      botReply.text =
-        "Perfecto 👍 ¿Con qué especialidad deseas agendar? (Medicina General, Odontología, Pediatría)";
-    } else if (text.includes("consultar")) {
-      botReply.text =
-        "Para consultar una cita, por favor proporciona tu número de paciente o correo electrónico.";
-    } else if (text.includes("cancelar")) {
-      botReply.text =
-        "Entendido. ¿Podrías darme el número de cita que deseas cancelar?";
-    }
-    // Especialidades
-    else if (
-      ["medicina general", "odontología", "pediatría"].some((s) =>
-        text.includes(s)
-      )
-    ) {
-      botReply.text = `Has elegido ${text}. ¿Qué día deseas tu cita? (Hoy, Mañana, Otro día)`;
-    }
-    // Días
-    else if (["hoy", "mañana", "otro día"].some((d) => text.includes(d))) {
-      botReply.text = "Gracias. Tu solicitud de cita ha sido registrada ✅";
-    }
-    // Mensaje por defecto
-    else {
-      botReply.text =
-        "No entendí eso 🤔. Por favor intenta mencionando palabras como 'agendar', 'consultar', 'cancelar', o una especialidad.";
+    if (context.step === "inicio") {
+      if (text.includes("agendar")) {
+        botReply.text = "📅 Selecciona un día en el calendario:";
+        setContext({ step: "elegirDia" });
+      } else if (text.includes("consultar")) {
+        botReply.text = "Te llevaré a tus citas, espera un momento...";
+        setTimeout(() => router.push("/dashboard"), 2000);
+      } else {
+        botReply.text =
+          "No te entendí 🤔. Escribe 'agendar' o 'consultar' para continuar.";
+      }
+    } else if (context.step === "elegirHora") {
+      const horaElegida = input.trim();
+      if (!horasDisponibles.find((h) => h.hora === horaElegida)) {
+        botReply.text = "Esa hora no está disponible, elige una de la lista.";
+      } else {
+        setContext({
+          step: "elegirMotivo",
+          fecha: context.fecha,
+          hora: horaElegida,
+        });
+        botReply.text = "✍️ Por favor, escribe el motivo de tu cita:";
+      }
+    } else if (context.step === "elegirMotivo") {
+      const motivo = input.trim();
+      setMotivoCita(motivo);
+      await fetch("/api/registrar-cita", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fecha: context.fecha,
+          hora: context.hora,
+          id_paciente: id,
+          nombre_paciente: nombre + " " + apellido,
+          fecha_nacimiento: fecha_nacimiento,
+          motivo: motivo,
+          telefono: telefono,
+          direccion: direccion,
+          status: "activa",
+        }),
+      });
+      botReply.text = `✅ Cita registrada para el ${context.fecha} a las ${context.hora}.\nMotivo: ${motivo}, \n escribe 'agendar' o 'consultar' para continuar `;
+      setContext({ step: "inicio", fecha: null, hora: null });
+      setMotivoCita("");
     }
 
-    setMessages([...newMessages, botReply]);
+    setMessages((prev) => [...prev, userMessage, botReply]);
     setInput("");
   };
 
+  const handleFechaChange = async (date) => {
+    if (!date) return;
+    const fechaStr = date.toISOString().slice(0, 10);
+    setFechaSeleccionada(date);
+
+    const dias = [
+      "domingo",
+      "lunes",
+      "martes",
+      "miércoles",
+      "jueves",
+      "viernes",
+      "sábado",
+    ];
+    const diaSemanal = dias[date.getDay()];
+
+    try {
+      const res = await fetch(
+        `/api/horarios-disponibles?fecha=${fechaStr}&dia=${encodeURIComponent(
+          diaSemanal
+        )}`
+      );
+      const data = await res.json();
+
+      if (!data || data.length === 0) {
+        setMessages((prev) => [
+          ...prev,
+          { sender: "bot", text: "No hay horas disponibles ese día 😔" },
+        ]);
+        setContext({ step: "inicio", fecha: null });
+        return;
+      }
+
+      setHorasDisponibles(data);
+      setContext({ step: "elegirHora", fecha: fechaStr });
+      setMessages((prev) => [
+        ...prev,
+        {
+          sender: "bot",
+          text:
+            "🕒 Horas disponibles:\n" +
+            data.map((h) => h.hora).join("\n") +
+            "\n\nEscribe la hora que prefieras (ej: 10:30)",
+        },
+      ]);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
   return (
-    <Paper
+    <Box
       sx={{
-        width: 400,
+        minHeight: "100vh",
+        bgcolor: "#f6ebe9",
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
         p: 2,
-        borderRadius: 3,
-        boxShadow: 4,
-        bgcolor: "background.paper",
       }}
     >
-      <Typography
-        variant="h6"
-        gutterBottom
-        style={{ display: "flex", alignItems: "center", gap: "8px" }}
-      >
-        <img
-          src="/logo.jpeg"
-          alt="Logo"
-          style={{ width: "100px", height: "100px", borderRadius: "50%" }}
-        />
-        Asistente Médico
-      </Typography>
-
-      <Box
+      <Paper
+        elevation={8}
         sx={{
-          height: 400,
-          overflowY: "auto",
-          border: "1px solid #ddd",
-          borderRadius: 2,
-          p: 1,
-          mb: 1,
+          width: 420,
+          p: 3,
+          borderRadius: 4,
+          bgcolor: "white",
+          boxShadow: "0px 6px 16px rgba(0,0,0,0.1)",
           display: "flex",
           flexDirection: "column",
         }}
       >
-        {messages.map((msg, index) => (
-          <Box
-            key={index}
-            sx={{
-              alignSelf: msg.sender === "user" ? "flex-end" : "flex-start",
-              mb: 1,
-              bgcolor: msg.sender === "user" ? "primary.main" : "grey.200",
-              color: msg.sender === "user" ? "white" : "black",
-              borderRadius: 2,
-              p: 1.5,
-              maxWidth: "75%",
+        <Typography
+          variant="h6"
+          align="center"
+          sx={{
+            color: "#6d6875",
+            mb: 2,
+            fontWeight: "bold",
+          }}
+        >
+          <img
+            src="/logo2.jpeg"
+            alt="Logo"
+            style={{
+              width: 70,
+              height: 70,
+              borderRadius: "50%",
+              marginBottom: "10px",
             }}
-          >
-            <Typography variant="body2">{msg.text}</Typography>
-          </Box>
-        ))}
-      </Box>
+          />
+          <br />
+          Asistente Médico Virtual
+        </Typography>
 
-      <TextField
-        fullWidth
-        size="small"
-        placeholder="Escribe algo..."
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && handleUserMessage()}
-        helperText="Escribe tu mensaje y presiona Enter"
-      />
-    </Paper>
+        <Box
+          sx={{
+            height: 380,
+            overflowY: "auto",
+            border: "1px solid #e0d6d5",
+            borderRadius: 2,
+            p: 2,
+            mb: 2,
+            display: "flex",
+            flexDirection: "column",
+            backgroundColor: "#fff8f8",
+          }}
+        >
+          {messages.map((msg, i) => (
+            <Box
+              key={i}
+              sx={{
+                alignSelf: msg.sender === "user" ? "flex-end" : "flex-start",
+                mb: 1,
+                bgcolor: msg.sender === "user" ? "#b5838d" : "rgba(0,0,0,0.05)",
+                color: msg.sender === "user" ? "white" : "black",
+                borderRadius:
+                  msg.sender === "user"
+                    ? "16px 16px 0px 16px"
+                    : "16px 16px 16px 0px",
+                p: 1.5,
+                maxWidth: "75%",
+                whiteSpace: "pre-line",
+              }}
+            >
+              <Typography variant="body2">{msg.text}</Typography>
+            </Box>
+          ))}
+        </Box>
+
+        {context.step === "elegirDia" ? (
+          <LocalizationProvider dateAdapter={AdapterDateFns} locale={esLocale}>
+            <DatePicker
+              label="Selecciona un día"
+              value={fechaSeleccionada}
+              onChange={handleFechaChange}
+              disablePast
+              shouldDisableDate={(date) => {
+                const fechaStr = date.toISOString().slice(0, 10);
+                return !fechasDisponibles.includes(fechaStr);
+              }}
+              renderInput={(params) => (
+                <TextField {...params} fullWidth size="small" />
+              )}
+            />
+          </LocalizationProvider>
+        ) : (
+          <TextField
+            fullWidth
+            size="small"
+            placeholder="Escribe un mensaje..."
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleUserMessage()}
+            sx={{
+              backgroundColor: "white",
+              borderRadius: 2,
+            }}
+          />
+        )}
+      </Paper>
+    </Box>
   );
 }

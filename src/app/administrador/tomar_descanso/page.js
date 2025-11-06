@@ -1,11 +1,10 @@
 import React from "react";
-import Dashboard from "../components/Dashboard";
+import TomarDescanso from "@/app/components/TomarDescanso";
 import LayoutComponent from "@/app/components/LayoutComponent";
-
 function page() {
   return (
     <LayoutComponent>
-      <Dashboard />{" "}
+      <TomarDescanso />
     </LayoutComponent>
   );
 }

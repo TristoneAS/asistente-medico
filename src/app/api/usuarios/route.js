@@ -4,12 +4,12 @@ import { conn } from "@/libs/mysql";
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
-    const correo = searchParams.get("correo");
+    const telefono = searchParams.get("telefono");
     let query = "SELECT COALESCE(MAX(id), 0) + 1 AS nuevo_id FROM usuarios;";
     let params = [];
-    if (correo) {
-      query = "SELECT * FROM usuarios where correo=?";
-      params = [correo];
+    if (telefono) {
+      query = "SELECT * FROM usuarios where telefono=?";
+      params = [telefono];
     }
     const [rows] = await conn.query(query, params);
     console.log(rows);
