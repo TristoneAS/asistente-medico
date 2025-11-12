@@ -14,10 +14,11 @@ export async function GET(req) {
       [dia]
     );
 
-    // Obtener citas ya registradas
-    const [citas] = await conn.query(`SELECT hora FROM citas WHERE fecha = ?`, [
-      fecha,
-    ]);
+    // Obtener todas las citas (activas y canceladas) para marcar horas como ocupadas
+    const [citas] = await conn.query(
+      `SELECT hora FROM citas WHERE fecha = ?`,
+      [fecha]
+    );
     // Truncar segundos para que coincida con HH:mm
     const horasOcupadas = citas.map((c) => c.hora.slice(0, 5));
 

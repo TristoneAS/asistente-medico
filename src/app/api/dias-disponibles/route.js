@@ -52,6 +52,8 @@ export async function GET() {
     const fin = new Date(hoy);
     fin.setDate(hoy.getDate() + diasRango);
     const fechaFin = fin.toISOString().slice(0, 10);
+    // Considerar todas las citas (activas y canceladas) para calcular disponibilidad
+    // Las horas canceladas también deben aparecer como no disponibles
     const [citas] = await conn.query(
       "SELECT fecha, hora FROM citas WHERE fecha BETWEEN ? AND ?",
       [fechaInicio, fechaFin]

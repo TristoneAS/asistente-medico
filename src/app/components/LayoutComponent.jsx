@@ -1,6 +1,6 @@
 "use client";
 import React, { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import {
   AppBar,
   Toolbar,
@@ -15,19 +15,24 @@ import {
   MenuItem,
   ListItemButton,
   ListItemIcon,
+  Badge,
 } from "@mui/material";
 import LogoutIcon from "@mui/icons-material/Logout";
 import MenuIcon from "@mui/icons-material/Menu";
+import NotificationsIcon from "@mui/icons-material/Notifications";
+import axios from "axios";
 
 const drawerWidth = 240;
 
 const App = ({ children }) => {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const [isClient, setIsClient] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [cliente, setCliente] = useState(false);
   const [anchorEl, setAnchorEl] = useState(null);
+  const [notificacionesSinLeer, setNotificacionesSinLeer] = useState(0);
   const router = useRouter();
+  const pathname = usePathname();
 
   // 🔹 Mostrar que estamos en el cliente (evita error SSR con localStorage)
   useEffect(() => {
@@ -42,6 +47,55 @@ const App = ({ children }) => {
       if (tipo_usuario === "cliente") setCliente(true);
     }
   }, [isClient]);
+
+  // 🔹 Consultar notificaciones cuando el cliente está logueado
+  useEffect(() => {
+    const fetchNotificacionesSinLeer = async () => {
+      if (!isClient || !cliente) return;
+      
+      try {
+        const id_cliente = localStorage.getItem("id");
+        if (id_cliente) {
+          const { data } = await axios.get(
+            `/api/notificacion/?id_cliente=${id_cliente}`
+          );
+          setNotificacionesSinLeer(data?.length || 0);
+        }
+      } catch (err) {
+        console.error("Error al obtener notificaciones:", err);
+      }
+    };
+
+    if (isClient && cliente) {
+      fetchNotificacionesSinLeer();
+      // Consultar cada 30 segundos para mantener actualizado
+      const interval = setInterval(fetchNotificacionesSinLeer, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [isClient, cliente]);
+
+  // 🔹 Recargar notificaciones cuando cambia la ruta (por si marca alguna como leída)
+  useEffect(() => {
+    const fetchNotificacionesSinLeer = async () => {
+      if (!isClient || !cliente) return;
+      
+      try {
+        const id_cliente = localStorage.getItem("id");
+        if (id_cliente) {
+          const { data } = await axios.get(
+            `/api/notificacion/?id_cliente=${id_cliente}`
+          );
+          setNotificacionesSinLeer(data?.length || 0);
+        }
+      } catch (err) {
+        console.error("Error al obtener notificaciones:", err);
+      }
+    };
+
+    if (isClient && cliente) {
+      fetchNotificacionesSinLeer();
+    }
+  }, [pathname, isClient, cliente]);
 
   // 🔹 Toggle del sidebar
   const handleToggleSidebar = () => setOpen(!open);
@@ -70,7 +124,6 @@ const App = ({ children }) => {
   const menuItemsAdmin = [
     { label: "Horario Médico", path: "/administrador/horario_medico" },
     { label: "Consultar Citas", path: "/administrador/consultar_citas" },
-    { label: "Tomar Descanso", path: "/administrador/tomar_descanso" },
     { label: "Tomarme el Día", path: "/administrador/tomarme_el_dia" },
   ];
 
@@ -197,7 +250,42 @@ const App = ({ children }) => {
                 }}
               >
                 <ListItemText
-                  primary={item.label}
+                  primary={
+                    item.label === "Notificaciones" ? (
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 1,
+                        }}
+                      >
+                        <span>{item.label}</span>
+                        <Badge
+                          badgeContent={notificacionesSinLeer}
+                          color="error"
+                          sx={{
+                            "& .MuiBadge-badge": {
+                              backgroundColor: "#d32f2f",
+                              color: "white",
+                              fontWeight: "bold",
+                              fontSize: "0.7rem",
+                            },
+                          }}
+                        >
+                          <NotificationsIcon
+                            sx={{
+                              fontSize: "1.2rem",
+                              color:
+                                notificacionesSinLeer > 0 ? "#d32f2f" : "inherit",
+                            }}
+                          />
+                        </Badge>
+                      </Box>
+                    ) : (
+                      item.label
+                    )
+                  }
                   sx={{ textAlign: "center" }}
                 />
               </ListItemButton>

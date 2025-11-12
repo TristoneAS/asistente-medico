@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Box, Paper, Typography, TextField } from "@mui/material";
 import { LocalizationProvider, DatePicker } from "@mui/x-date-pickers";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
@@ -9,20 +9,20 @@ import { useRouter } from "next/navigation";
 
 export default function ChatBot() {
   const router = useRouter();
+  const messagesEndRef = useRef(null);
 
-  const id = localStorage.getItem("id");
-  const nombre = localStorage.getItem("nombre");
-  const apellido = localStorage.getItem("apellido");
-  const telefono = localStorage.getItem("telefono");
-  const fecha_nacimiento = localStorage.getItem("fecha_nacimiento");
-  const direccion = localStorage.getItem("direccion");
+  // --- Datos del usuario ---
+  const [userData, setUserData] = useState({
+    id: "",
+    nombre: "",
+    apellido: "",
+    telefono: "",
+    fecha_nacimiento: "",
+    direccion: "",
+  });
 
-  const [messages, setMessages] = useState([
-    {
-      sender: "bot",
-      text: `👋 ¡Hola ${nombre}! Soy tu asistente virtual. Escribe 'agendar' para reservar tu cita o 'consultar' para ver tus citas ya agendadas.`,
-    },
-  ]);
+  // --- Estados principales ---
+  const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [context, setContext] = useState({
     step: "inicio",
@@ -34,6 +34,40 @@ export default function ChatBot() {
   const [fechasDisponibles, setFechasDisponibles] = useState([]);
   const [motivoCita, setMotivoCita] = useState("");
 
+  // --- Cargar datos del usuario ---
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const id = localStorage.getItem("id");
+      const nombre = localStorage.getItem("nombre");
+      const apellido = localStorage.getItem("apellido");
+      const telefono = localStorage.getItem("telefono");
+      const fecha_nacimiento = localStorage.getItem("fecha_nacimiento");
+      const direccion = localStorage.getItem("direccion");
+
+      setUserData({
+        id,
+        nombre,
+        apellido,
+        telefono,
+        fecha_nacimiento,
+        direccion,
+      });
+    }
+  }, []);
+
+  // --- Mensaje inicial cuando se cargan los datos ---
+  useEffect(() => {
+    if (userData.nombre) {
+      setMessages([
+        {
+          sender: "bot",
+          text: `👋 ¡Hola ${userData.nombre}! Soy tu asistente virtual. Escribe 'agendar' para reservar tu cita o 'consultar' para ver tus citas ya agendadas.`,
+        },
+      ]);
+    }
+  }, [userData.nombre]);
+
+  // --- Obtener fechas disponibles desde la API ---
   useEffect(() => {
     const obtenerFechasDisponibles = async () => {
       try {
@@ -47,16 +81,24 @@ export default function ChatBot() {
     obtenerFechasDisponibles();
   }, []);
 
+  // --- Scroll automático al último mensaje ---
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // --- Manejo del mensaje del usuario ---
   const handleUserMessage = async () => {
     if (!input.trim()) return;
+
     const userMessage = { sender: "user", text: input };
     let botReply = { sender: "bot", text: "" };
     const text = input.trim().toLowerCase();
 
+    // === Flujo conversacional ===
     if (context.step === "inicio") {
       if (text.includes("agendar")) {
         botReply.text = "📅 Selecciona un día en el calendario:";
-        setContext({ step: "elegirDia" });
+        setContext((prev) => ({ ...prev, step: "elegirDia" }));
       } else if (text.includes("consultar")) {
         botReply.text = "Te llevaré a tus citas, espera un momento...";
         setTimeout(() => router.push("/dashboard"), 2000);
@@ -69,32 +111,42 @@ export default function ChatBot() {
       if (!horasDisponibles.find((h) => h.hora === horaElegida)) {
         botReply.text = "Esa hora no está disponible, elige una de la lista.";
       } else {
-        setContext({
+        setContext((prev) => ({
+          ...prev,
           step: "elegirMotivo",
-          fecha: context.fecha,
           hora: horaElegida,
-        });
+        }));
         botReply.text = "✍️ Por favor, escribe el motivo de tu cita:";
       }
     } else if (context.step === "elegirMotivo") {
       const motivo = input.trim();
       setMotivoCita(motivo);
-      await fetch("/api/registrar-cita", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fecha: context.fecha,
-          hora: context.hora,
-          id_paciente: id,
-          nombre_paciente: nombre + " " + apellido,
-          fecha_nacimiento: fecha_nacimiento,
-          motivo: motivo,
-          telefono: telefono,
-          direccion: direccion,
-          status: "activa",
-        }),
-      });
-      botReply.text = `✅ Cita registrada para el ${context.fecha} a las ${context.hora}.\nMotivo: ${motivo}, \n escribe 'agendar' o 'consultar' para continuar `;
+
+      try {
+        const res = await fetch("/api/registrar-cita", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fecha: context.fecha,
+            hora: context.hora,
+            id_paciente: userData.id,
+            nombre_paciente: `${userData.nombre} ${userData.apellido}`,
+            fecha_nacimiento: userData.fecha_nacimiento,
+            motivo: motivo,
+            telefono: userData.telefono,
+            direccion: userData.direccion,
+            status: "activa",
+          }),
+        });
+
+        if (!res.ok) throw new Error("Error al registrar cita");
+
+        botReply.text = `✅ Cita registrada para el ${context.fecha} a las ${context.hora}.\nMotivo: ${motivo}\n\nEscribe 'agendar' o 'consultar' para continuar.`;
+      } catch (err) {
+        botReply.text =
+          "❌ Ocurrió un error al registrar tu cita. Intenta nuevamente.";
+      }
+
       setContext({ step: "inicio", fecha: null, hora: null });
       setMotivoCita("");
     }
@@ -103,6 +155,7 @@ export default function ChatBot() {
     setInput("");
   };
 
+  // --- Manejo de selección de fecha ---
   const handleFechaChange = async (date) => {
     if (!date) return;
     const fechaStr = date.toISOString().slice(0, 10);
@@ -137,7 +190,7 @@ export default function ChatBot() {
       }
 
       setHorasDisponibles(data);
-      setContext({ step: "elegirHora", fecha: fechaStr });
+      setContext((prev) => ({ ...prev, step: "elegirHora", fecha: fechaStr }));
       setMessages((prev) => [
         ...prev,
         {
@@ -199,6 +252,7 @@ export default function ChatBot() {
           Asistente Médico Virtual
         </Typography>
 
+        {/* Mensajes del chat */}
         <Box
           sx={{
             height: 380,
@@ -227,15 +281,21 @@ export default function ChatBot() {
                 p: 1.5,
                 maxWidth: "75%",
                 whiteSpace: "pre-line",
+                overflowWrap: "break-word",
               }}
             >
               <Typography variant="body2">{msg.text}</Typography>
             </Box>
           ))}
+          <div ref={messagesEndRef} />
         </Box>
 
+        {/* Campo de entrada o selector de fecha */}
         {context.step === "elegirDia" ? (
-          <LocalizationProvider dateAdapter={AdapterDateFns} locale={esLocale}>
+          <LocalizationProvider
+            dateAdapter={AdapterDateFns}
+            adapterLocale={esLocale}
+          >
             <DatePicker
               label="Selecciona un día"
               value={fechaSeleccionada}
@@ -245,9 +305,9 @@ export default function ChatBot() {
                 const fechaStr = date.toISOString().slice(0, 10);
                 return !fechasDisponibles.includes(fechaStr);
               }}
-              renderInput={(params) => (
-                <TextField {...params} fullWidth size="small" />
-              )}
+              slotProps={{
+                textField: { fullWidth: true, size: "small" },
+              }}
             />
           </LocalizationProvider>
         ) : (

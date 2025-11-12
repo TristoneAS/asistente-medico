@@ -11,13 +11,15 @@ export async function GET(req) {
     let params = [];
 
     if (fecha) {
-      query += " WHERE fecha = ?";
+      // Para consultas por fecha (admin), mostrar solo citas activas
+      query += " WHERE fecha = ? AND status = 'activa'";
       params.push(fecha);
     }
 
     query += " ORDER BY fecha DESC, hora ASC";
     if (id_cliente) {
-      query = "Select * from citas where id_paciente=?";
+      // Solo mostrar citas activas para los pacientes
+      query = "SELECT * FROM citas WHERE id_paciente = ? AND status = 'activa' ORDER BY fecha DESC, hora ASC";
       params = [id_cliente];
     }
     const [rows] = await conn.query(query, params);
@@ -26,6 +28,36 @@ export async function GET(req) {
     console.error("Error al consultar citas:", error);
     return NextResponse.json(
       { error: "Error interno al obtener las citas" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PUT(req) {
+  try {
+    const { fecha, status } = await req.json();
+
+    if (!fecha || !status) {
+      return NextResponse.json(
+        { error: "Faltan datos requeridos (fecha, status)" },
+        { status: 400 }
+      );
+    }
+
+    // Actualizar todas las citas de la fecha especificada
+    const [result] = await conn.query(
+      "UPDATE citas SET status = ? WHERE fecha = ?",
+      [status, fecha]
+    );
+
+    return NextResponse.json({
+      message: `Se actualizaron ${result.affectedRows} citas`,
+      affectedRows: result.affectedRows,
+    });
+  } catch (error) {
+    console.error("Error al actualizar citas:", error);
+    return NextResponse.json(
+      { error: "Error interno al actualizar las citas" },
       { status: 500 }
     );
   }
