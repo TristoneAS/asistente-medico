@@ -61,7 +61,7 @@ export default function ChatBot() {
       setMessages([
         {
           sender: "bot",
-          text: `👋 ¡Hola ${userData.nombre}! Soy tu asistente virtual. Escribe 'agendar' para reservar tu cita o 'consultar' para ver tus citas ya agendadas.`,
+          text: `👋 ¡Hola ${userData.nombre}! Soy tu asistente virtual.\n\nEscribe:\n• 'agendar' para reservar tu cita\n• 'consultar' para ver tus citas\n• 'notificaciones' para ver tus notificaciones\n• 'cancelar' para reiniciar el chat`,
         },
       ]);
     }
@@ -102,21 +102,124 @@ export default function ChatBot() {
       } else if (text.includes("consultar")) {
         botReply.text = "Te llevaré a tus citas, espera un momento...";
         setTimeout(() => router.push("/dashboard"), 2000);
+      } else if (
+        text.includes("notificaciones") ||
+        text.includes("notificacion")
+      ) {
+        botReply.text = "Te llevaré a tus notificaciones, espera un momento...";
+        setTimeout(() => router.push("/Notificaciones"), 2000);
+      } else if (text.includes("cancelar")) {
+        botReply.text =
+          "🔄 Chat reiniciado. Escribe 'agendar', 'consultar' o 'notificaciones' para continuar.";
+        setContext({ step: "inicio", fecha: null, hora: null });
+        setFechaSeleccionada(null);
+        setHorasDisponibles([]);
+        setMotivoCita("");
       } else {
         botReply.text =
-          "No te entendí 🤔. Escribe 'agendar' o 'consultar' para continuar.";
+          "No te entendí 🤔. Escribe 'agendar', 'consultar', 'notificaciones' o 'cancelar' para continuar.";
       }
     } else if (context.step === "elegirHora") {
-      const horaElegida = input.trim();
-      if (!horasDisponibles.find((h) => h.hora === horaElegida)) {
-        botReply.text = "Esa hora no está disponible, elige una de la lista.";
+      // Verificar si el usuario quiere cancelar
+      if (text.includes("cancelar")) {
+        botReply.text =
+          "🔄 Chat reiniciado. Escribe 'agendar', 'consultar' o 'notificaciones' para continuar.";
+        setContext({ step: "inicio", fecha: null, hora: null });
+        setFechaSeleccionada(null);
+        setHorasDisponibles([]);
+        setMotivoCita("");
       } else {
-        setContext((prev) => ({
-          ...prev,
-          step: "elegirMotivo",
-          hora: horaElegida,
-        }));
-        botReply.text = "✍️ Por favor, escribe el motivo de tu cita:";
+        // Normalizar la hora ingresada
+        const horaInput = input.trim();
+
+        // Función para normalizar la hora
+        const normalizarHora = (horaStr) => {
+          // Remover espacios y convertir a string
+          let hora = horaStr.replace(/\s/g, "");
+
+          // Si solo tiene números sin ":", agregar ":00"
+          if (/^\d+$/.test(hora)) {
+            hora = hora.padStart(2, "0") + ":00";
+          }
+
+          // Si tiene formato H:MM o HH:MM, asegurar que tenga formato HH:MM
+          if (/^\d{1,2}:\d{1,2}$/.test(hora)) {
+            const [horas, minutos] = hora.split(":");
+            const horasFormateadas = horas.padStart(2, "0");
+            const minutosFormateados = minutos.padStart(2, "0");
+            hora = `${horasFormateadas}:${minutosFormateados}`;
+          }
+
+          return hora;
+        };
+
+        const horaNormalizada = normalizarHora(horaInput);
+
+        // Buscar la hora en las disponibles (comparando con formato normalizado)
+        const horaEncontrada = horasDisponibles.find((h) => {
+          const horaDisponible = h.hora;
+          return (
+            horaDisponible === horaNormalizada || horaDisponible === horaInput
+          );
+        });
+
+        if (!horaEncontrada) {
+          botReply.text = `❌ La hora "${horaInput}" no está disponible. Elige una de la lista:\n${horasDisponibles
+            .map((h) => h.hora)
+            .join("\n")}\n\nTambién puedes escribir 'cancelar' para reiniciar.`;
+        } else {
+          setContext((prev) => ({
+            ...prev,
+            step: "elegirMotivo",
+            hora: horaEncontrada.hora, // Usar la hora del formato correcto
+          }));
+          botReply.text = "✍️ Por favor, escribe el motivo de tu cita:";
+        }
+      }
+    } else if (
+      context.step === "elegirDia" ||
+      context.step === "elegirMotivo"
+    ) {
+      // Permitir cancelar en cualquier paso
+      if (text.includes("cancelar")) {
+        botReply.text =
+          "🔄 Chat reiniciado. Escribe 'agendar', 'consultar' o 'notificaciones' para continuar.";
+        setContext({ step: "inicio", fecha: null, hora: null });
+        setFechaSeleccionada(null);
+        setHorasDisponibles([]);
+        setMotivoCita("");
+      } else if (context.step === "elegirMotivo") {
+        // Continuar con el flujo normal de motivo
+        const motivo = input.trim();
+        setMotivoCita(motivo);
+
+        try {
+          const res = await fetch("/api/registrar-cita", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              fecha: context.fecha,
+              hora: context.hora,
+              id_paciente: userData.id,
+              nombre_paciente: `${userData.nombre} ${userData.apellido}`,
+              fecha_nacimiento: userData.fecha_nacimiento,
+              motivo: motivo,
+              telefono: userData.telefono,
+              direccion: userData.direccion,
+              status: "activa",
+            }),
+          });
+
+          if (!res.ok) throw new Error("Error al registrar cita");
+
+          botReply.text = `✅ Cita registrada para el ${context.fecha} a las ${context.hora}.\nMotivo: ${motivo}\n\nEscribe 'agendar' o 'consultar' para continuar.`;
+        } catch (err) {
+          botReply.text =
+            "❌ Ocurrió un error al registrar tu cita. Intenta nuevamente.";
+        }
+
+        setContext({ step: "inicio", fecha: null, hora: null });
+        setMotivoCita("");
       }
     } else if (context.step === "elegirMotivo") {
       const motivo = input.trim();
@@ -198,7 +301,7 @@ export default function ChatBot() {
           text:
             "🕒 Horas disponibles:\n" +
             data.map((h) => h.hora).join("\n") +
-            "\n\nEscribe la hora que prefieras (ej: 10:30)",
+            "\n\nEscribe la hora que prefieras (ej: 10:30, 9:00, 9 o 09:00)\nTambién puedes escribir 'cancelar' para reiniciar.",
         },
       ]);
     } catch (error) {

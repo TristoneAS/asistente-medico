@@ -48,11 +48,30 @@ const App = ({ children }) => {
     }
   }, [isClient]);
 
+  // 🔹 Verificar recordatorios de citas automáticamente
+  useEffect(() => {
+    const verificarRecordatorios = async () => {
+      try {
+        await axios.get("/api/verificar-recordatorios-citas");
+      } catch (err) {
+        console.error("Error al verificar recordatorios:", err);
+      }
+    };
+
+    // Verificar al cargar la aplicación
+    if (isClient) {
+      verificarRecordatorios();
+      // Verificar cada hora (3600000 ms)
+      const interval = setInterval(verificarRecordatorios, 3600000);
+      return () => clearInterval(interval);
+    }
+  }, [isClient]);
+
   // 🔹 Consultar notificaciones cuando el cliente está logueado
   useEffect(() => {
     const fetchNotificacionesSinLeer = async () => {
       if (!isClient || !cliente) return;
-      
+
       try {
         const id_cliente = localStorage.getItem("id");
         if (id_cliente) {
@@ -78,7 +97,7 @@ const App = ({ children }) => {
   useEffect(() => {
     const fetchNotificacionesSinLeer = async () => {
       if (!isClient || !cliente) return;
-      
+
       try {
         const id_cliente = localStorage.getItem("id");
         if (id_cliente) {
@@ -277,7 +296,9 @@ const App = ({ children }) => {
                             sx={{
                               fontSize: "1.2rem",
                               color:
-                                notificacionesSinLeer > 0 ? "#d32f2f" : "inherit",
+                                notificacionesSinLeer > 0
+                                  ? "#d32f2f"
+                                  : "inherit",
                             }}
                           />
                         </Badge>
